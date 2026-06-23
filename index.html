@@ -840,21 +840,7 @@
         </div>
       </div>
 
-      <!-- Simulation debug panel -->
-      <div class="simulator-card">
-        <div class="simulator-title">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
-          PC検証用：OCRクロップシミュレータ (製番疑似テスト)
-        </div>
-        <div class="simulator-grid">
-          <button class="sim-btn" onclick="simulateOcrScan('TS17-1021456-0')">① TS17-1021456-0</button>
-          <button class="sim-btn" onclick="simulateOcrScan('TS11-1021456-8')">② TS11-1021456-8</button>
-          <button class="sim-btn" onclick="simulateOcrScan('TS71-7021456-0')">③ TS71-7021456-0</button>
-          <button class="sim-btn" onclick="simulateOcrScan('AS17-5021456-3')">④ AS17-5021456-3 (5番)</button>
-          <button class="sim-btn" onclick="simulateOcrScan('AS17-S021456-3')">⑤ AS17-S021456-3 (S番)</button>
-          <button class="sim-btn" onclick="simulateOcrScan('AS17-S021456-3 (手ブレ)')" style="border-color: #f59e0b; color: #fbbf24;">⑥ 誤読: AS17-5O21456-3</button>
-        </div>
-      </div>
+
 
     </div>
 
@@ -882,7 +868,8 @@
         <div id="giant-letter-display" class="giant-letter">-</div>
         <div id="status-caption-display" class="status-caption">番号を入力してください</div>
         <div id="matching-info-display" class="matching-info" style="display: none;"></div>
-    </div>
+      </div>
+    </div> <!-- Close pasting-view -->
 
     <!-- 3. DATA MANAGEMENT VIEW PANEL -->
     <div id="data-view" class="view-panel">
@@ -1495,23 +1482,13 @@
           if (parsed.masterData && Object.keys(parsed.masterData).length > 0) {
             masterData = parsed.masterData;
           } else {
-            // Default sample data
-            masterData = {
-              "1": { slipNo: "1", prodNo: "TS17-1021456-0" },
-              "2": { slipNo: "2", prodNo: "TS11-1021456-8" },
-              "3": { slipNo: "3", prodNo: "TS71-7021456-0" },
-              "4": { slipNo: "4", prodNo: "AS17-5021456-3" },
-              "5": { slipNo: "5", prodNo: "AS17-S021456-3" }
-            };
+            masterData = {};
           }
         } catch (e) {
           console.error("Error loading state:", e);
         }
       } else {
-        masterData = {
-          "1": { slipNo: "1", prodNo: "TS17-1021456-0" },
-          "2": { slipNo: "2", prodNo: "TS11-1021456-8" }
-        };
+        masterData = {};
       }
       updateMasterCountDisplay();
     }
@@ -1577,24 +1554,7 @@
       }, 2500);
     }
 
-    // 13. SIMULATION FOR DESK TESTING
-    function simulateOcrScan(simulatedText) {
-      // Simulate drawing on preview canvas
-      const ctx = previewCanvasEl.getContext('2d');
-      previewCanvasEl.width = 300;
-      previewCanvasEl.height = 40;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, 300, 40);
-      ctx.fillStyle = '#10b981';
-      ctx.font = '16px monospace';
-      ctx.fillText(simulatedText, 10, 26);
-      cropPreviewContainer.style.display = 'block';
 
-      // Pass simulated text to the input field
-      ocrInputEl.value = simulatedText;
-      onOcrInputChanged();
-      showToast(`疑似クロップ読込: "${simulatedText}"`);
-    }
   </script>
 </body>
 </html>
