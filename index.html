@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>狙い撃ちOCR 検収＆仕分けアシスタント</title>
+  <meta name="theme-color" content="#090d16">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192x192.png">
+  <title>狙い撃ちOCR 検品＆仕分けアシスタント</title>
   <!-- Google Fonts for premium typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -938,6 +941,47 @@
       boxList: ["A","B","C","D","E","F","G","H","I","J"] // Default box list
     };
 
+    // --- IndexedDB Wrapper ---
+    const DB_NAME = 'KenpinDB';
+    const STORE_NAME = 'appState';
+    const DB_VERSION = 1;
+
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME);
+          }
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    async function dbGet(key) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function dbPut(key, value) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.put(value, key);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    }
+
     // Camera State
     let videoStream = null;
     let availableCameras = [];
@@ -965,8 +1009,12 @@
     const torchPlaceholder = document.getElementById('torch-placeholder');
 
     // 3. INITIALIZE APP
-    window.addEventListener('DOMContentLoaded', () => {
-      loadSavedState();
+    window.addEventListener('DOMContentLoaded', async () => {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(err => console.error('SW Registration Failed:', err));
+      }
+
+      await loadSavedState();
       renderBoxSelect();
       renderQuickMasterList();
       renderHistoryList();
@@ -1538,21 +1586,24 @@
       onPastingInputChanged();
     }
 
-    // 11. STATE SAVING
-    function saveState() {
-      localStorage.setItem('ocr_assistant_new_state', JSON.stringify({
-        associations: appState.associations,
-        history: appState.history,
-        boxList: appState.boxList,
-        masterData: masterData
-      }));
+    // 11. STATE SAVING (IndexedDB)
+    async function saveState() {
+      try {
+        await dbPut('kenpin_state', {
+          associations: appState.associations,
+          history: appState.history,
+          boxList: appState.boxList,
+          masterData: masterData
+        });
+      } catch(e) {
+        console.error("Failed to save state to IndexedDB", e);
+      }
     }
 
-    function loadSavedState() {
-      const saved = localStorage.getItem('ocr_assistant_new_state');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
+    async function loadSavedState() {
+      try {
+        const parsed = await dbGet('kenpin_state');
+        if (parsed) {
           appState.associations = parsed.associations || {};
           appState.history = parsed.history || [];
           if (parsed.boxList && Array.isArray(parsed.boxList)) {
@@ -1563,10 +1614,11 @@
           } else {
             masterData = {};
           }
-        } catch (e) {
-          console.error("Error loading state:", e);
+        } else {
+          masterData = {};
         }
-      } else {
+      } catch (e) {
+        console.error("Error loading state from IndexedDB:", e);
         masterData = {};
       }
       updateMasterCountDisplay();
