@@ -824,12 +824,8 @@
             <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">[マスタ一覧] タップで手動入力：</div>
             <div style="max-height: 150px; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 12px;">
               <div>
-                <div style="font-size: 11px; color: var(--primary); font-weight: bold; margin-bottom: 4px;">▼ 未検品</div>
+                <div id="unread-header" style="font-size: 11px; color: var(--primary); font-weight: bold; margin-bottom: 4px;">▼ 未検品 (残り -- 件)</div>
                 <div class="quick-master-list" id="quick-master-list-unread" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
-              </div>
-              <div>
-                <div style="font-size: 11px; color: var(--text-muted); font-weight: bold; margin-bottom: 4px;">▼ 検品済み</div>
-                <div class="quick-master-list" id="quick-master-list-read" style="display: flex; flex-wrap: wrap; gap: 6px; opacity: 0.6;"></div>
               </div>
             </div>
           </div>
@@ -1316,14 +1312,24 @@
     // Render quick-fill master items
     function renderQuickMasterList() {
       const unreadListEl = document.getElementById('quick-master-list-unread');
-      const readListEl = document.getElementById('quick-master-list-read');
+      const unreadHeaderEl = document.getElementById('unread-header');
       
-      if (!unreadListEl || !readListEl) return;
+      if (!unreadListEl) return;
       
       unreadListEl.innerHTML = '';
-      readListEl.innerHTML = '';
+      
+      let unreadCount = 0;
+      let totalCount = 0;
       
       for (const [id, item] of Object.entries(masterData)) {
+        totalCount++;
+        
+        // Skip rendering if already read (makes it disappear)
+        if (appState.associations[item.slipNo]) {
+          continue;
+        }
+        
+        unreadCount++;
         const btn = document.createElement('button');
         btn.className = 'quick-master-btn';
         btn.setAttribute('data-slip-no', item.slipNo);
@@ -1333,10 +1339,18 @@
           onOcrInputChanged();
         };
         
-        if (appState.associations[item.slipNo]) {
-          readListEl.appendChild(btn);
+        unreadListEl.appendChild(btn);
+      }
+      
+      if (unreadHeaderEl) {
+        if (totalCount === 0) {
+          unreadHeaderEl.innerText = `▼ マスタ未登録`;
+        } else if (unreadCount === 0) {
+          unreadHeaderEl.innerText = `▼ 全て検品完了しました！ (${totalCount}件)`;
+          unreadHeaderEl.style.color = "#10b981";
         } else {
-          unreadListEl.appendChild(btn);
+          unreadHeaderEl.innerText = `▼ 未検品 (残り ${unreadCount} 件 / 全 ${totalCount} 件)`;
+          unreadHeaderEl.style.color = "var(--primary)";
         }
       }
     }
