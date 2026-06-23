@@ -1,84 +1,60 @@
-const CACHE_NAME = 'kenpin-ocr-cache-v1';
-
-// We explicitly cache our local static files
-const STATIC_URLS = [
+const CACHE_NAME = 'kenpin-ocr-v1';
+const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icon-192x192.png',
-  './icon-512x512.png'
+  './icons/icon-192x192.png',
+  './icons/icon-512x512.png',
+  'https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Noto+Sans+JP:wght@400;700&display=swap',
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
 ];
 
-self.addEventListener('install', (event) => {
+self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_URLS);
-    })
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        return cache.addAll(ASSETS).catch(err => {
+          console.warn('Some assets could not be cached on install:', err);
+        });
+      })
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
+self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then(keys => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
+        keys.map(key => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-self.addEventListener('fetch', (event) => {
-  const requestUrl = new URL(event.request.url);
-
-  // For CDN resources (Tesseract core, worker, language files)
-  // We use Cache First here to ensure offline functionality works perfectly after first load.
-  if (
-    requestUrl.hostname.includes('cdn.jsdelivr.net') || 
-    requestUrl.hostname.includes('tessdata.projectnaptha.com')
-  ) {
-    event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(event.request).then((networkResponse) => {
-          if (!networkResponse || networkResponse.status !== 200 || (networkResponse.type !== 'basic' && networkResponse.type !== 'cors')) {
-            return networkResponse;
-          }
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-          return networkResponse;
-        }).catch(() => {
-          // Ignore offline fetch errors
-        });
-      })
-    );
-    return;
-  }
-
-  // For our own local files: Stale-While-Revalidate or Cache-First
+self.addEventListener('fetch', event => {
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      if (response) {
-        // Fetch in background to update cache
-        fetch(event.request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, networkResponse);
+    caches.match(event.request)
+      .then(response => {
+        if (response) {
+          return response;
+        }
+        return fetch(event.request).then(networkResponse => {
+          // Dynamic caching for Tesseract worker/core files and language data
+          if (event.request.url.includes('tesseract.js') || event.request.url.includes('eng.traineddata')) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then(cache => {
+              cache.put(event.request, responseToCache);
             });
           }
-        }).catch(() => {});
-        return response;
-      }
-      return fetch(event.request);
-    })
+          return networkResponse;
+        }).catch(() => {
+          // Fallback if offline and not in cache
+          console.warn('Fetch failed, offline mode and resource not cached:', event.request.url);
+        });
+      })
   );
 });

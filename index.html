@@ -3,10 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#090d16">
-  <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icon-192x192.png">
   <title>狙い撃ちOCR 検品＆仕分けアシスタント</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/icon-192x192.png">
   <!-- Google Fonts for premium typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -941,47 +940,6 @@
       boxList: ["A","B","C","D","E","F","G","H","I","J"] // Default box list
     };
 
-    // --- IndexedDB Wrapper ---
-    const DB_NAME = 'KenpinDB';
-    const STORE_NAME = 'appState';
-    const DB_VERSION = 1;
-
-    function openDB() {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-        request.onupgradeneeded = (e) => {
-          const db = e.target.result;
-          if (!db.objectStoreNames.contains(STORE_NAME)) {
-            db.createObjectStore(STORE_NAME);
-          }
-        };
-        request.onsuccess = (e) => resolve(e.target.result);
-        request.onerror = (e) => reject(e.target.error);
-      });
-    }
-
-    async function dbGet(key) {
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readonly');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.get(key);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-    }
-
-    async function dbPut(key, value) {
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(value, key);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
-    }
-
     // Camera State
     let videoStream = null;
     let availableCameras = [];
@@ -1010,14 +968,14 @@
 
     // 3. INITIALIZE APP
     window.addEventListener('DOMContentLoaded', async () => {
+      // Register Service Worker for PWA
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').catch(err => console.error('SW Registration Failed:', err));
+        navigator.serviceWorker.register('./sw.js').then(() => {
+          console.log("Service Worker Registered");
+        });
       }
 
       await loadSavedState();
-      renderBoxSelect();
-      renderQuickMasterList();
-      renderHistoryList();
       startCamera();
     });
 
@@ -1586,42 +1544,80 @@
       onPastingInputChanged();
     }
 
-    // 11. STATE SAVING (IndexedDB)
+    // --- IndexedDB Wrapper ---
+    const DB_NAME = 'kenpin_ocr_db';
+    const STORE_NAME = 'app_state';
+
+    function initDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME);
+          }
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    async function setIDB(key, value) {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.put(value, key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function getIDB(key) {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    // 11. STATE SAVING
     async function saveState() {
-      try {
-        await dbPut('kenpin_state', {
-          associations: appState.associations,
-          history: appState.history,
-          boxList: appState.boxList,
-          masterData: masterData
-        });
-      } catch(e) {
-        console.error("Failed to save state to IndexedDB", e);
-      }
+      await setIDB('ocr_assistant_state', {
+        associations: appState.associations,
+        history: appState.history,
+        boxList: appState.boxList,
+        masterData: masterData
+      });
     }
 
     async function loadSavedState() {
-      try {
-        const parsed = await dbGet('kenpin_state');
-        if (parsed) {
-          appState.associations = parsed.associations || {};
-          appState.history = parsed.history || [];
-          if (parsed.boxList && Array.isArray(parsed.boxList)) {
-            appState.boxList = parsed.boxList;
+      const saved = await getIDB('ocr_assistant_state');
+      if (saved) {
+        try {
+          appState.associations = saved.associations || {};
+          appState.history = saved.history || [];
+          if (saved.boxList && Array.isArray(saved.boxList)) {
+            appState.boxList = saved.boxList;
           }
-          if (parsed.masterData && Object.keys(parsed.masterData).length > 0) {
-            masterData = parsed.masterData;
+          if (saved.masterData && Object.keys(saved.masterData).length > 0) {
+            masterData = saved.masterData;
           } else {
             masterData = {};
           }
-        } else {
-          masterData = {};
+        } catch (e) {
+          console.error("Error loading state:", e);
         }
-      } catch (e) {
-        console.error("Error loading state from IndexedDB:", e);
+      } else {
         masterData = {};
       }
       updateMasterCountDisplay();
+      renderBoxSelect();
+      renderQuickMasterList();
+      renderHistoryList();
     }
 
     // 11.5 DATA MANAGEMENT
