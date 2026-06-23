@@ -822,8 +822,15 @@
           <!-- Master Match Quick Fills -->
           <div style="margin-top: 8px;">
             <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">[マスタ一覧] タップで手動入力：</div>
-            <div class="quick-master-list" id="quick-master-list" style="max-height: 150px; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column;">
-              <!-- JS will render quick fill options dynamically -->
+            <div style="max-height: 150px; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 12px;">
+              <div>
+                <div style="font-size: 11px; color: var(--primary); font-weight: bold; margin-bottom: 4px;">▼ 未検品</div>
+                <div class="quick-master-list" id="quick-master-list-unread" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+              </div>
+              <div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: bold; margin-bottom: 4px;">▼ 検品済み</div>
+                <div class="quick-master-list" id="quick-master-list-read" style="display: flex; flex-wrap: wrap; gap: 6px; opacity: 0.6;"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -1308,7 +1315,14 @@
 
     // Render quick-fill master items
     function renderQuickMasterList() {
-      quickMasterListEl.innerHTML = '';
+      const unreadListEl = document.getElementById('quick-master-list-unread');
+      const readListEl = document.getElementById('quick-master-list-read');
+      
+      if (!unreadListEl || !readListEl) return;
+      
+      unreadListEl.innerHTML = '';
+      readListEl.innerHTML = '';
+      
       for (const [id, item] of Object.entries(masterData)) {
         const btn = document.createElement('button');
         btn.className = 'quick-master-btn';
@@ -1318,7 +1332,12 @@
           ocrInputEl.value = item.prodNo;
           onOcrInputChanged();
         };
-        quickMasterListEl.appendChild(btn);
+        
+        if (appState.associations[item.slipNo]) {
+          readListEl.appendChild(btn);
+        } else {
+          unreadListEl.appendChild(btn);
+        }
       }
     }
 
@@ -1370,7 +1389,12 @@
       
       saveState();
       renderHistoryList();
+      renderQuickMasterList(); // Move item to read section
       showToast(`箱${box} ⇄ NO.${slipNo} 登録完了`);
+      
+      // Clear input for next scan
+      ocrInputEl.value = '';
+      onOcrInputChanged();
     }
 
     // Render History
@@ -1412,6 +1436,7 @@
 
       saveState();
       renderHistoryList();
+      renderQuickMasterList();
       showToast("履歴を削除しました");
     }
 
@@ -1421,6 +1446,7 @@
         appState.associations = {};
         saveState();
         renderHistoryList();
+        renderQuickMasterList();
         showToast("すべてのデータを初期化しました");
       }
     }
