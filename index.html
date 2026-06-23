@@ -733,17 +733,7 @@
         </div>
         <div class="dropdown-container">
           <select id="box-select" class="select-input" onchange="onBoxSelectChanged()">
-            <option value="" disabled selected>箱（A 〜 J）を選択してください</option>
-            <option value="A">箱A</option>
-            <option value="B">箱B</option>
-            <option value="C">箱C</option>
-            <option value="D">箱D</option>
-            <option value="E">箱E</option>
-            <option value="F">箱F</option>
-            <option value="G">箱G</option>
-            <option value="H">箱H</option>
-            <option value="I">箱I</option>
-            <option value="J">箱J</option>
+            <option value="" disabled selected>箱を選択してください</option>
           </select>
         </div>
       </div>
@@ -902,6 +892,28 @@
           <button class="delete-hist-btn" onclick="clearMasterData()" style="text-decoration: underline;">全件削除</button>
         </div>
       </div>
+
+      <div class="card" style="margin-top: 16px;">
+        <div class="card-title">③ 箱（仕分け先）の自動生成</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
+          検品時に入れる「箱」の名前ルールと数を設定します。（デフォルト: A〜Jの10個）
+        </div>
+        
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <label style="flex:1; background:rgba(9,13,22,0.6); border:1px solid var(--border-color); padding:10px; border-radius:8px; font-size:14px; text-align:center; cursor:pointer;">
+            <input type="radio" name="box-type" id="box-type-alpha" value="alpha" checked style="margin-right: 4px;"> アルファベット
+          </label>
+          <label style="flex:1; background:rgba(9,13,22,0.6); border:1px solid var(--border-color); padding:10px; border-radius:8px; font-size:14px; text-align:center; cursor:pointer;">
+            <input type="radio" name="box-type" id="box-type-num" value="num" style="margin-right: 4px;"> 数字
+          </label>
+        </div>
+        
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="number" id="box-count-input" class="text-input" style="width: 80px; text-align:center;" value="10" min="1" max="100">
+          <span style="font-size: 14px; white-space:nowrap; flex:1;">個のリストを作成</span>
+          <button class="confirm-btn" style="height: 48px; width: auto; padding: 0 16px;" onclick="generateBoxes()">生成する</button>
+        </div>
+      </div>
     </div>
   </main>
 
@@ -922,7 +934,8 @@
       matchedMaster: null,  // Holds matched master object
       ambiguousMasters: [], // Holds candidates if multiple matches (e.g. 5 vs S)
       associations: {},     // Maps slipNo -> boxName (e.g. "1" -> "A")
-      history: []           // Array of scan history objects
+      history: [],          // Array of scan history objects
+      boxList: ["A","B","C","D","E","F","G","H","I","J"] // Default box list
     };
 
     // Camera State
@@ -954,6 +967,7 @@
     // 3. INITIALIZE APP
     window.addEventListener('DOMContentLoaded', () => {
       loadSavedState();
+      renderBoxSelect();
       renderQuickMasterList();
       renderHistoryList();
       startCamera();
@@ -1529,6 +1543,7 @@
       localStorage.setItem('ocr_assistant_new_state', JSON.stringify({
         associations: appState.associations,
         history: appState.history,
+        boxList: appState.boxList,
         masterData: masterData
       }));
     }
@@ -1540,6 +1555,9 @@
           const parsed = JSON.parse(saved);
           appState.associations = parsed.associations || {};
           appState.history = parsed.history || [];
+          if (parsed.boxList && Array.isArray(parsed.boxList)) {
+            appState.boxList = parsed.boxList;
+          }
           if (parsed.masterData && Object.keys(parsed.masterData).length > 0) {
             masterData = parsed.masterData;
           } else {
@@ -1615,6 +1633,58 @@
       }, 2500);
     }
 
+
+    // 13. BOX GENERATION
+    function renderBoxSelect() {
+      const select = document.getElementById('box-select');
+      select.innerHTML = '<option value="" disabled selected>箱を選択してください</option>';
+      appState.boxList.forEach(box => {
+        const opt = document.createElement('option');
+        opt.value = box;
+        opt.innerText = `箱 ${box}`;
+        select.appendChild(opt);
+      });
+      // Restore selection
+      if (appState.activeBox && appState.boxList.includes(appState.activeBox)) {
+        select.value = appState.activeBox;
+      } else {
+        appState.activeBox = null;
+        selectedBoxLabelEl.innerText = "未選択";
+      }
+    }
+
+    function generateBoxes() {
+      const isNum = document.getElementById('box-type-num').checked;
+      const count = parseInt(document.getElementById('box-count-input').value, 10);
+      
+      if (isNaN(count) || count < 1 || count > 200) {
+        showToast("1〜200の数字を入力してください");
+        return;
+      }
+      
+      let newBoxes = [];
+      if (isNum) {
+        for (let i = 1; i <= count; i++) {
+          newBoxes.push(i.toString());
+        }
+      } else {
+        // Generate alphabets A, B... Z, AA, AB...
+        for (let i = 0; i < count; i++) {
+          let name = '';
+          let temp = i;
+          do {
+            name = String.fromCharCode(65 + (temp % 26)) + name;
+            temp = Math.floor(temp / 26) - 1;
+          } while (temp >= 0);
+          newBoxes.push(name);
+        }
+      }
+      
+      appState.boxList = newBoxes;
+      saveState();
+      renderBoxSelect();
+      showToast(`${count}個の「${isNum ? '数字' : 'アルファベット'}」箱リストを生成しました！`);
+    }
 
   </script>
 </body>
