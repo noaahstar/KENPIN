@@ -712,9 +712,9 @@
 <body>
 
   <header>
-    <h1>狙い撃ちOCR 検収仕分け</h1>
+    <h1>狙い撃ちOCR 検品仕分け</h1>
     <div class="tabs-container">
-      <button class="tab-btn active" onclick="switchTab('inspection')">検収</button>
+      <button class="tab-btn active" onclick="switchTab('inspection')">検品</button>
       <button class="tab-btn" onclick="switchTab('pasting')">貼付</button>
       <button class="tab-btn" onclick="switchTab('data')">データ</button>
       <div class="tab-indicator"></div>
@@ -812,22 +812,22 @@
               <span id="ocr-status-badge" class="ocr-status status-unmatched">未検品</span>
             </div>
           </div>
+          
+          <!-- Confirm Button inside Card to avoid scrolling -->
+          <button class="confirm-btn" style="height: 48px; margin-top: 4px;" onclick="confirmScan()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            検品を確定する
+          </button>
 
           <!-- Master Match Quick Fills -->
-          <div style="margin-top: 4px;">
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">[納品書マスタ一覧] タップで手動入力：</div>
-            <div class="quick-master-list" id="quick-master-list">
+          <div style="margin-top: 8px;">
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">[マスタ一覧] タップで手動入力：</div>
+            <div class="quick-master-list" id="quick-master-list" style="max-height: 150px; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column;">
               <!-- JS will render quick fill options dynamically -->
             </div>
           </div>
         </div>
       </div>
-
-      <!-- Confirm Button -->
-      <button class="confirm-btn" onclick="confirmScan()">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-        検収を確定する
-      </button>
 
       <!-- Scan History Card -->
       <div class="card" style="margin-bottom: 24px;">
@@ -1270,6 +1270,7 @@
         btn.className = 'quick-master-btn'; // reset
         if (item.slipNo === slipId) {
           btn.classList.add('matched');
+          btn.parentNode.prepend(btn); // Auto-sort matched item to top
         }
       });
     }
@@ -1288,6 +1289,7 @@
         btn.className = 'quick-master-btn';
         if (slipIds.includes(slipId)) {
           btn.classList.add('candidate');
+          btn.parentNode.prepend(btn); // Auto-sort matched items to top
         }
       });
     }
@@ -1339,6 +1341,15 @@
       const slipNo = appState.matchedMaster.slipNo;
       const prodNo = appState.matchedMaster.prodNo;
       const box = appState.activeBox;
+
+      // Duplicate scan warning check
+      if (appState.associations[slipNo]) {
+        const existingBox = appState.associations[slipNo];
+        const isConfirmed = confirm(`⚠ 警告: この製番(NO.${slipNo})は既に「箱${existingBox}」として検品済みです。\n本当に上書きして「箱${box}」に再登録しますか？`);
+        if (!isConfirmed) {
+          return; // Cancel registration
+        }
+      }
 
       // Associate in memory
       appState.associations[slipNo] = box;
@@ -1442,7 +1453,7 @@
         statusCaptionEl.innerText = `箱 ${associatedBox} に貼り付け`;
         statusCaptionEl.style.color = "var(--accent-red)";
         
-        matchingInfoEl.innerText = `製番: ${item.prodNo} (検収済)`;
+        matchingInfoEl.innerText = `製番: ${item.prodNo} (検品済)`;
         matchingInfoEl.style.display = "block";
         
         // Retrigger pop animation
@@ -1452,7 +1463,7 @@
       } else {
         giantLetterEl.innerText = "未";
         giantLetterEl.style.color = "var(--text-muted)";
-        statusCaptionEl.innerText = `検収未登録の納品書です`;
+        statusCaptionEl.innerText = `検品未登録の納品書です`;
         statusCaptionEl.style.color = "var(--text-muted)";
         
         matchingInfoEl.innerText = `製番: ${item.prodNo}`;
@@ -1527,7 +1538,7 @@
       });
       
       if (loadedCount > 0) {
-        masterData = newMasterData;
+        Object.assign(masterData, newMasterData); // Append data instead of overwrite
         saveState();
         renderQuickMasterList();
         updateMasterCountDisplay();
