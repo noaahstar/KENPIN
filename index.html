@@ -1,0 +1,1600 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>狙い撃ちOCR 検収＆仕分けアシスタント</title>
+  <!-- Google Fonts for premium typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Tesseract.js for OCR functionality -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --panel-dark: #121824;
+      --border-color: #222d42;
+      --text-main: #f1f5f9;
+      --text-muted: #64748b;
+      --primary: #10b981; /* Premium Green for focus/laser vibe */
+      --primary-hover: #059669;
+      --primary-glow: rgba(16, 185, 129, 0.4);
+      --accent-red: #ef4444;
+      --accent-red-glow: rgba(239, 68, 68, 0.4);
+      --box-selected-bg: #10b981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans JP', 'Outfit', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    header {
+      background-color: rgba(18, 24, 36, 0.9);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 16px;
+    }
+
+    h1 {
+      font-size: 18px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #a7f3d0, #10b981);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: 0.5px;
+    }
+
+    /* Tab switcher style */
+    .tabs-container {
+      display: flex;
+      background-color: #090d16;
+      border-radius: 9999px;
+      padding: 4px;
+      border: 1px solid var(--border-color);
+      position: relative;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 10px 16px;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      text-align: center;
+      z-index: 2;
+    }
+
+    .tab-btn.active {
+      color: var(--text-main);
+    }
+
+    .tab-indicator {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      left: 4px;
+      width: calc(33.333% - 4px);
+      background-color: var(--primary);
+      border-radius: 9999px;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 1;
+      box-shadow: 0 0 12px var(--primary-glow);
+    }
+
+    .tab-btn:nth-child(2).active ~ .tab-indicator {
+      transform: translateX(100%);
+    }
+
+    .tab-btn:nth-child(3).active ~ .tab-indicator {
+      transform: translateX(200%);
+    }
+
+    /* Main Content Wrapper */
+    main {
+      flex: 1;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      max-width: 600px;
+      margin: 0 auto;
+      width: 100%;
+      gap: 16px;
+    }
+
+    .view-panel {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+      animation: fadeIn 0.3s ease-out forwards;
+    }
+
+    .view-panel.active {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Cards Style */
+    .card {
+      background-color: var(--panel-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 4px 25px rgba(0,0,0,0.4);
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Dropdown box selection */
+    .dropdown-container {
+      position: relative;
+      width: 100%;
+    }
+
+    .select-input {
+      width: 100%;
+      height: 50px;
+      background-color: rgba(9, 13, 22, 0.8);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      color: var(--text-main);
+      padding: 0 16px;
+      font-size: 16px;
+      font-weight: 700;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+
+    .select-input:focus {
+      border-color: var(--primary);
+    }
+
+    .dropdown-container::after {
+      content: '▼';
+      font-size: 12px;
+      color: var(--primary);
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+
+    /* Camera View and Cropping Overlay */
+    .camera-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background-color: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+    }
+
+    #camera-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Green Narrow Laser Target Focus Frame */
+    .scanner-target-frame {
+      position: absolute;
+      top: 50%;
+      left: 6%;
+      right: 6%;
+      height: 52px; /* Narrow profile for 1 line of code */
+      transform: translateY(-50%);
+      border: 2px solid var(--primary);
+      border-radius: 6px;
+      /* Visual box shadow creates the darkened surrounding overlay */
+      box-shadow: 0 0 0 9999px rgba(9, 13, 22, 0.7), 0 0 15px var(--primary-glow);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* Target Reticle Corners for futuristic styling */
+    .scanner-target-frame::before, .scanner-target-frame::after {
+      content: '';
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-color: #34d399;
+      border-style: solid;
+      pointer-events: none;
+    }
+
+    .scanner-target-frame::before {
+      top: -2px; left: -2px;
+      border-width: 3px 0 0 3px;
+    }
+
+    .scanner-target-frame::after {
+      bottom: -2px; right: -2px;
+      border-width: 0 3px 3px 0;
+    }
+
+    /* Center Laser Line Animation */
+    .laser-line {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background-color: #34d399;
+      box-shadow: 0 0 10px #10b981;
+      animation: laserScan 2s infinite ease-in-out;
+    }
+
+    @keyframes laserScan {
+      0% { top: 0%; }
+      50% { top: 100%; }
+      100% { top: 0%; }
+    }
+
+    /* Camera Controls */
+    .camera-overlay-ui {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      z-index: 10;
+    }
+
+    .camera-btn {
+      background-color: rgba(9, 13, 22, 0.85);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      backdrop-filter: blur(8px);
+    }
+
+    .scan-trigger-btn {
+      background-color: var(--primary);
+      border: none;
+      color: white;
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 0 20px var(--primary-glow);
+      transition: transform 0.2s ease, background-color 0.2s ease;
+    }
+
+    .scan-trigger-btn:active {
+      transform: scale(0.9);
+    }
+
+    .scan-trigger-btn svg {
+      width: 24px;
+      height: 24px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.5;
+    }
+
+    /* Loading Overlay */
+    .ocr-loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(9, 13, 22, 0.85);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      gap: 12px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(255,255,255,0.1);
+      border-left-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* OCR Result Section */
+    .ocr-result-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ocr-input-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .text-input {
+      flex: 1;
+      height: 48px;
+      background-color: rgba(9, 13, 22, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      color: var(--text-main);
+      padding: 0 16px;
+      font-size: 16px;
+      font-weight: 700;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .text-input:focus {
+      border-color: var(--primary);
+    }
+
+    .ocr-status {
+      font-size: 12px;
+      font-weight: bold;
+      padding: 6px 10px;
+      border-radius: 6px;
+      display: inline-block;
+      text-align: center;
+    }
+    
+    .status-unmatched {
+      background-color: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+
+    .status-matched {
+      background-color: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+
+    .status-ambiguous {
+      background-color: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.25);
+    }
+
+    /* Master Quick Fill buttons */
+    .quick-master-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .quick-master-btn {
+      background-color: rgba(34, 45, 66, 0.4);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .quick-master-btn.matched {
+      background-color: rgba(16, 185, 129, 0.2);
+      border-color: var(--primary);
+      color: #a7f3d0;
+    }
+
+    .quick-master-btn.candidate {
+      background-color: rgba(245, 158, 11, 0.2);
+      border-color: #f59e0b;
+      color: #fde68a;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.7; }
+      50% { opacity: 1; }
+      100% { opacity: 0.7; }
+    }
+
+    /* Confirm button style */
+    .confirm-btn {
+      width: 100%;
+      height: 54px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+      border: none;
+      border-radius: 12px;
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 15px var(--primary-glow);
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .confirm-btn:active {
+      transform: scale(0.98);
+    }
+
+    /* Scan History styling */
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 180px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    /* Custom scrollbar for history */
+    .history-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .history-list::-webkit-scrollbar-thumb {
+      background-color: var(--border-color);
+      border-radius: 4px;
+    }
+
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: rgba(9, 13, 22, 0.4);
+      border: 1px solid var(--border-color);
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      animation: slideIn 0.2s ease-out;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .hist-box {
+      font-weight: 800;
+      color: #34d399;
+      background-color: rgba(16, 185, 129, 0.15);
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      margin-right: 6px;
+    }
+
+    .hist-details {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .hist-meta {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .delete-hist-btn {
+      background: none;
+      border: none;
+      color: #ef4444;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: bold;
+      padding: 4px;
+    }
+
+    /* PASTING MODE UI */
+    .pasting-layout {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 20px;
+    }
+
+    .pasting-input-card {
+      width: 100%;
+    }
+
+    /* Digital Keypad for rapid mobile typing */
+    .digital-keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .keypad-btn {
+      height: 52px;
+      background-color: rgba(9, 13, 22, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      color: var(--text-main);
+      font-size: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.1s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .keypad-btn:active {
+      background-color: var(--primary);
+      transform: scale(0.95);
+    }
+
+    .keypad-btn.clear {
+      color: #ef4444;
+    }
+
+    /* Centered Giant Box Display Area */
+    .pasting-display-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 250px;
+      width: 100%;
+      position: relative;
+    }
+
+    .giant-letter {
+      font-family: 'Outfit', sans-serif;
+      font-size: 16rem; /* Ultra massive size */
+      font-weight: 800;
+      color: var(--accent-red);
+      text-shadow: 0 0 35px var(--accent-red-glow);
+      line-height: 1;
+      text-align: center;
+      transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0.3); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .status-caption {
+      font-size: 18px;
+      font-weight: bold;
+      color: var(--text-muted);
+      margin-top: 8px;
+      letter-spacing: 1px;
+    }
+
+    .matching-info {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      background-color: rgba(9, 13, 22, 0.5);
+      padding: 4px 12px;
+      border-radius: 9999px;
+      border: 1px solid var(--border-color);
+      text-align: center;
+    }
+
+    /* Simulation Mode Panel for Desktop Testing */
+    .simulator-card {
+      margin-top: auto;
+      background-color: rgba(18, 24, 36, 0.5);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .simulator-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .simulator-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+    }
+
+    .sim-btn {
+      background-color: rgba(9, 13, 22, 0.7);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      font-size: 11px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sim-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* Toast popup notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background-color: rgba(9, 13, 22, 0.9);
+      border: 1px solid var(--primary);
+      padding: 12px 24px;
+      border-radius: 30px;
+      color: white;
+      font-weight: bold;
+      font-size: 14px;
+      z-index: 1000;
+      opacity: 0;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 15px var(--primary-glow);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>狙い撃ちOCR 検収仕分け</h1>
+    <div class="tabs-container">
+      <button class="tab-btn active" onclick="switchTab('inspection')">検収</button>
+      <button class="tab-btn" onclick="switchTab('pasting')">貼付</button>
+      <button class="tab-btn" onclick="switchTab('data')">データ</button>
+      <div class="tab-indicator"></div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 1. INSPECTION MODE VIEW PANEL -->
+    <div id="inspection-view" class="view-panel active">
+      
+      <!-- Box Selector Card -->
+      <div class="card">
+        <div class="card-title">
+          <span>① 箱番号選択</span>
+          <span style="color: var(--primary); font-weight: bold;" id="selected-box-label">未選択</span>
+        </div>
+        <div class="dropdown-container">
+          <select id="box-select" class="select-input" onchange="onBoxSelectChanged()">
+            <option value="" disabled selected>箱（A 〜 J）を選択してください</option>
+            <option value="A">箱A</option>
+            <option value="B">箱B</option>
+            <option value="C">箱C</option>
+            <option value="D">箱D</option>
+            <option value="E">箱E</option>
+            <option value="F">箱F</option>
+            <option value="G">箱G</option>
+            <option value="H">箱H</option>
+            <option value="I">箱I</option>
+            <option value="J">箱J</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Camera Feed Card -->
+      <div class="card" style="padding: 10px;">
+        <div class="card-title" style="margin: 6px 6px 10px 6px;">
+          <span>② カメラ映像（緑枠内に文字を合わせてください）</span>
+          <span style="font-size: 10px; color: var(--primary); display: flex; align-items: center; gap: 4px; font-weight: bold;">
+            <span style="width: 6px; height: 6px; border-radius:50%; background-color: var(--primary); display: inline-block;"></span>
+            LIVE
+          </span>
+        </div>
+        
+        <div class="camera-container" id="video-container">
+          <video id="camera-video" autoplay playsinline muted></video>
+          
+          <!-- Green Target Focus Frame -->
+          <div class="scanner-target-frame" id="scanner-target-frame">
+            <div class="laser-line"></div>
+          </div>
+          
+          <!-- Camera Control Bar -->
+          <div class="camera-overlay-ui">
+            <button class="camera-btn" onclick="toggleCamera()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6M3 17V11h6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L3 11m18 2-2.64 5.36A9 9 0 0 1 3.51 15"/></svg>
+              カメラ切替
+            </button>
+            
+            <button class="scan-trigger-btn" onclick="performCroppedOCR()" title="フォーカス枠内をOCR">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+              </svg>
+            </button>
+
+            <button class="camera-btn" onclick="toggleFlashlight()" id="torch-btn" style="display: none;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              ライト
+            </button>
+            <div style="width: 60px;" id="torch-placeholder"></div> <!-- spacer -->
+          </div>
+
+          <!-- Loading state overlay -->
+          <div class="ocr-loading-overlay" id="ocr-loading">
+            <div class="spinner"></div>
+            <div style="font-weight: bold; font-size: 14px;">枠内をクロップして解析中...</div>
+            <div style="font-size: 11px; color: var(--text-muted);" id="ocr-progress">画像解析を読み込んでいます</div>
+          </div>
+        </div>
+
+        <!-- Crop Preview Thumbnail Container -->
+        <div id="crop-preview-container" style="display: none; margin-top: 10px; padding: 6px; background-color: rgba(9, 13, 22, 0.4); border-radius: 8px; border: 1px dashed var(--border-color);">
+          <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px; text-align: center;">クロップされた認識用画像：</span>
+          <canvas id="preview-canvas" style="max-width: 100%; height: 36px; border: 1px solid var(--border-color); border-radius: 4px; display: block; margin: 0 auto; object-fit: contain; background: #000;"></canvas>
+        </div>
+      </div>
+
+      <!-- AI Recognition Input Card -->
+      <div class="card">
+        <div class="card-title">③ AI認識結果 (手修正可)</div>
+        <div class="ocr-result-wrapper">
+          <div class="ocr-input-group">
+            <input type="text" id="ocr-result-input" class="text-input" placeholder="緑枠を合わせてスキャンするか手入力" oninput="onOcrInputChanged()">
+            <div style="display: flex; flex-direction: column; justify-content: center; min-width: 100px;">
+              <span id="ocr-status-badge" class="ocr-status status-unmatched">未検品</span>
+            </div>
+          </div>
+
+          <!-- Master Match Quick Fills -->
+          <div style="margin-top: 4px;">
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">[納品書マスタ一覧] タップで手動入力：</div>
+            <div class="quick-master-list" id="quick-master-list">
+              <!-- JS will render quick fill options dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Confirm Button -->
+      <button class="confirm-btn" onclick="confirmScan()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        検収を確定する
+      </button>
+
+      <!-- Scan History Card -->
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="card-title">
+          <span>⑤ スキャン履歴一覧</span>
+          <button class="delete-hist-btn" onclick="clearAllHistory()" style="color: var(--text-muted); font-size:11px; text-decoration: underline;">全削除</button>
+        </div>
+        <div class="history-list" id="history-list">
+          <div style="color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px 0;">履歴はありません</div>
+        </div>
+      </div>
+
+      <!-- Simulation debug panel -->
+      <div class="simulator-card">
+        <div class="simulator-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
+          PC検証用：OCRクロップシミュレータ (製番疑似テスト)
+        </div>
+        <div class="simulator-grid">
+          <button class="sim-btn" onclick="simulateOcrScan('TS17-1021456-0')">① TS17-1021456-0</button>
+          <button class="sim-btn" onclick="simulateOcrScan('TS11-1021456-8')">② TS11-1021456-8</button>
+          <button class="sim-btn" onclick="simulateOcrScan('TS71-7021456-0')">③ TS71-7021456-0</button>
+          <button class="sim-btn" onclick="simulateOcrScan('AS17-5021456-3')">④ AS17-5021456-3 (5番)</button>
+          <button class="sim-btn" onclick="simulateOcrScan('AS17-S021456-3')">⑤ AS17-S021456-3 (S番)</button>
+          <button class="sim-btn" onclick="simulateOcrScan('AS17-S021456-3 (手ブレ)')" style="border-color: #f59e0b; color: #fbbf24;">⑥ 誤読: AS17-5O21456-3</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 2. PASTING MODE VIEW PANEL -->
+    <div id="pasting-view" class="view-panel">
+      
+      <!-- Input Card -->
+      <div class="card pasting-input-card">
+        <div class="card-title">① 納品書NO入力</div>
+        <input type="number" id="pasting-slip-input" class="text-input" style="font-size: 24px; text-align: center; height: 56px;" placeholder="NO.を入力 (1〜5)" oninput="onPastingInputChanged()">
+        
+        <!-- On-screen numeric keypad -->
+        <div class="digital-keypad">
+          <button class="keypad-btn" onclick="keypadPress('1')">1</button>
+          <button class="keypad-btn" onclick="keypadPress('2')">2</button>
+          <button class="keypad-btn" onclick="keypadPress('3')">3</button>
+          <button class="keypad-btn" onclick="keypadPress('4')">4</button>
+          <button class="keypad-btn" onclick="keypadPress('5')">5</button>
+          <button class="keypad-btn clear" onclick="keypadPress('C')">C</button>
+        </div>
+      </div>
+
+      <!-- Giant Box Display Area -->
+      <div class="pasting-display-area">
+        <div id="giant-letter-display" class="giant-letter">-</div>
+        <div id="status-caption-display" class="status-caption">番号を入力してください</div>
+        <div id="matching-info-display" class="matching-info" style="display: none;"></div>
+    </div>
+
+    <!-- 3. DATA MANAGEMENT VIEW PANEL -->
+    <div id="data-view" class="view-panel">
+      <div class="card">
+        <div class="card-title">① マスタデータの読み込み</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
+          エクセル等から「納品書NO」と「製番」の列をコピーして、下の枠に貼り付けてください。（カンマまたはタブ区切り）
+        </div>
+        <textarea id="csv-input-area" class="text-input" style="height: 120px; padding: 12px; font-weight: normal; font-size: 14px; white-space: pre; resize: vertical;" placeholder="例:&#10;1&#9;TS17-1021456-0&#10;2&#9;TS11-1021456-8"></textarea>
+        
+        <button class="confirm-btn" style="margin-top: 12px; height: 48px;" onclick="loadCsvData()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          データを登録する
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">② 現在の登録状況</div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 14px;">登録件数: <strong id="master-count-display" style="color: var(--primary); font-size: 18px;">0</strong> 件</span>
+          <button class="delete-hist-btn" onclick="clearMasterData()" style="text-decoration: underline;">全件削除</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Toast overlay -->
+  <div id="toast-notify" class="toast">確定しました</div>
+
+  <!-- Offscreen canvas for capturing camera snapshots -->
+  <canvas id="capture-canvas" style="display: none;"></canvas>
+
+  <script>
+    // 1. MASTER DATA CONFIGURATION (NEW SPEC)
+    let masterData = {};
+
+    // 2. STATE MANAGEMENT
+    let appState = {
+      activeBox: null,
+      ocrResult: "",
+      matchedMaster: null,  // Holds matched master object
+      ambiguousMasters: [], // Holds candidates if multiple matches (e.g. 5 vs S)
+      associations: {},     // Maps slipNo -> boxName (e.g. "1" -> "A")
+      history: []           // Array of scan history objects
+    };
+
+    // Camera State
+    let videoStream = null;
+    let availableCameras = [];
+    let currentCameraIndex = 0;
+    let isTorchOn = false;
+
+    // Elements
+    const videoEl = document.getElementById('camera-video');
+    const boxSelectEl = document.getElementById('box-select');
+    const selectedBoxLabelEl = document.getElementById('selected-box-label');
+    const ocrInputEl = document.getElementById('ocr-result-input');
+    const ocrBadgeEl = document.getElementById('ocr-status-badge');
+    const quickMasterListEl = document.getElementById('quick-master-list');
+    const historyListEl = document.getElementById('history-list');
+    const toastEl = document.getElementById('toast-notify');
+    const pastingInputEl = document.getElementById('pasting-slip-input');
+    const giantLetterEl = document.getElementById('giant-letter-display');
+    const statusCaptionEl = document.getElementById('status-caption-display');
+    const matchingInfoEl = document.getElementById('matching-info-display');
+    const loadingOverlayEl = document.getElementById('ocr-loading');
+    const ocrProgressEl = document.getElementById('ocr-progress');
+    const previewCanvasEl = document.getElementById('preview-canvas');
+    const cropPreviewContainer = document.getElementById('crop-preview-container');
+    const torchBtn = document.getElementById('torch-btn');
+    const torchPlaceholder = document.getElementById('torch-placeholder');
+
+    // 3. INITIALIZE APP
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSavedState();
+      renderQuickMasterList();
+      renderHistoryList();
+      startCamera();
+    });
+
+    // 4. TAB NAVIGATION
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.view-panel').forEach(panel => panel.classList.remove('active'));
+      
+      if (tabName === 'inspection') {
+        document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+        document.getElementById('inspection-view').classList.add('active');
+        startCamera();
+      } else if (tabName === 'pasting') {
+        document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+        document.getElementById('pasting-view').classList.add('active');
+        stopCamera();
+        pastingInputEl.focus();
+        onPastingInputChanged();
+      } else if (tabName === 'data') {
+        document.querySelector('.tab-btn:nth-child(3)').classList.add('active');
+        document.getElementById('data-view').classList.add('active');
+        stopCamera();
+      }
+    }
+
+    // 5. BOX SELECT CHANGE HANDLER
+    function onBoxSelectChanged() {
+      const value = boxSelectEl.value;
+      appState.activeBox = value;
+      if (value) {
+        selectedBoxLabelEl.innerText = `箱 ${value} 選択中`;
+      } else {
+        selectedBoxLabelEl.innerText = "未選択";
+      }
+    }
+
+    // 6. CAMERA STREAMS
+    async function startCamera() {
+      if (videoStream) return;
+
+      const constraints = {
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      };
+
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        videoEl.srcObject = videoStream;
+        
+        setTimeout(checkFlashlightAvailability, 1000);
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        availableCameras = devices.filter(device => device.kind === 'videoinput');
+      } catch (err) {
+        console.warn("Rear camera error, falling back:", err);
+        try {
+          videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          videoEl.srcObject = videoStream;
+        } catch (fbErr) {
+          console.error("Camera access failed:", fbErr);
+          showToast("カメラを起動できませんでした。手修正欄に入力してください。");
+        }
+      }
+    }
+
+    function stopCamera() {
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+        videoEl.srcObject = null;
+      }
+      isTorchOn = false;
+      torchBtn.style.display = 'none';
+      torchPlaceholder.style.display = 'block';
+    }
+
+    async function toggleCamera() {
+      if (availableCameras.length <= 1) {
+        showToast("切替可能なカメラが他にありません");
+        return;
+      }
+      stopCamera();
+      currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+      const deviceId = availableCameras[currentCameraIndex].deviceId;
+      
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: deviceId } },
+          audio: false
+        });
+        videoEl.srcObject = videoStream;
+        setTimeout(checkFlashlightAvailability, 1000);
+      } catch (err) {
+        console.error("Error switching camera:", err);
+        startCamera();
+      }
+    }
+
+    function checkFlashlightAvailability() {
+      if (!videoStream) return;
+      const track = videoStream.getVideoTracks()[0];
+      if (!track) return;
+
+      const capabilities = track.getCapabilities();
+      if (capabilities.torch) {
+        torchBtn.style.display = 'flex';
+        torchPlaceholder.style.display = 'none';
+      } else {
+        torchBtn.style.display = 'none';
+        torchPlaceholder.style.display = 'block';
+      }
+    }
+
+    async function toggleFlashlight() {
+      if (!videoStream) return;
+      const track = videoStream.getVideoTracks()[0];
+      if (!track) return;
+
+      try {
+        isTorchOn = !isTorchOn;
+        await track.applyConstraints({
+          advanced: [{ torch: isTorchOn }]
+        });
+        torchBtn.innerHTML = isTorchOn ? 
+          `<svg width="14" height="14" viewBox="0 0 24 24" fill="yellow" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> ライト消灯` : 
+          `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> ライト点灯`;
+      } catch (err) {
+        console.error("Flashlight control failed:", err);
+      }
+    }
+
+    // 7. SCAN & NARROW TARGET AREA CROPPING
+    async function performCroppedOCR() {
+      if (!videoStream) {
+        showToast("カメラが起動していません。手動で入力してください。");
+        return;
+      }
+
+      loadingOverlayEl.style.display = 'flex';
+      ocrProgressEl.innerText = "照準枠内を切り抜いています...";
+
+      try {
+        const offscreenCanvas = document.getElementById('capture-canvas');
+        const offscreenCtx = offscreenCanvas.getContext('2d');
+
+        // Bounding rectangles of display video and target focus frame
+        const videoRect = videoEl.getBoundingClientRect();
+        const targetFrameEl = document.getElementById('scanner-target-frame');
+        const targetRect = targetFrameEl.getBoundingClientRect();
+
+        // Source raw resolution
+        const srcWidth = videoEl.videoWidth;
+        const srcHeight = videoEl.videoHeight;
+
+        // Display dimensions
+        const displayWidth = videoRect.width;
+        const displayHeight = videoRect.height;
+
+        // Coordinate scaling factors
+        const scaleX = srcWidth / displayWidth;
+        const scaleY = srcHeight / displayHeight;
+
+        // Compute crop bounds relative to the video display
+        const relLeft = targetRect.left - videoRect.left;
+        const relTop = targetRect.top - videoRect.top;
+        const relWidth = targetRect.width;
+        const relHeight = targetRect.height;
+
+        // Map relative crop bounds to source video resolution
+        const cropX = relLeft * scaleX;
+        const cropY = relTop * scaleY;
+        const cropWidth = relWidth * scaleX;
+        const cropHeight = relHeight * scaleY;
+
+        // Resize offscreen canvas to exact cropped size
+        // --- OCR ACCURACY IMPROVEMENT: Upscaling ---
+        const upscale = 2.5;
+        offscreenCanvas.width = cropWidth * upscale;
+        offscreenCanvas.height = cropHeight * upscale;
+
+        // Draw cropped segment and upscale
+        offscreenCtx.drawImage(videoEl, cropX, cropY, cropWidth, cropHeight, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+        // --- OCR ACCURACY IMPROVEMENT: Grayscale & Binarization ---
+        const imgData = offscreenCtx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          // Grayscale formula
+          const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+          // Threshold (adjust between 128-160 for optimal binarization)
+          const color = brightness > 140 ? 255 : 0;
+          
+          data[i] = color;
+          data[i+1] = color;
+          data[i+2] = color;
+        }
+        offscreenCtx.putImageData(imgData, 0, 0);
+
+        // Display thumbnail crop in UI preview canvas for user verification
+        previewCanvasEl.width = offscreenCanvas.width;
+        previewCanvasEl.height = offscreenCanvas.height;
+        const previewCtx = previewCanvasEl.getContext('2d');
+        previewCtx.drawImage(offscreenCanvas, 0, 0);
+        cropPreviewContainer.style.display = 'block';
+
+        ocrProgressEl.innerText = "OCRエンジンを準備しています...";
+        
+        // Execute Tesseract OCR on cropped frame
+        const result = await Tesseract.recognize(
+          offscreenCanvas,
+          'eng',
+          {
+            tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-',
+            logger: m => {
+              if (m.status === 'recognizing text') {
+                ocrProgressEl.innerText = `文字を分析中... ${Math.round(m.progress * 100)}%`;
+              }
+            }
+          }
+        );
+
+        const parsedText = result.data.text.trim();
+        console.log("Cropped OCR Result:", parsedText);
+        
+        ocrInputEl.value = parsedText;
+        onOcrInputChanged();
+        showToast("切り抜きOCR完了");
+
+      } catch (err) {
+        console.error("Cropped OCR Error:", err);
+        showToast("OCR処理中にエラーが発生しました");
+      } finally {
+        loadingOverlayEl.style.display = 'none';
+      }
+    }
+
+    // 8. OCR PARSER & FUZZY MATCH LOGIC
+    function onOcrInputChanged() {
+      const rawInputText = ocrInputEl.value.toUpperCase().replace(/\s+/g, '');
+      
+      let bestMatch = null;
+      let candidates = [];
+
+      // Helper to normalize strings for robust OCR fault-tolerance
+      // Solves common misreads: O->0, I->1, Z->2, B->8, G->6, T->7
+      const normalizeText = (str) => {
+        return str.replace(/O/g, '0')
+                  .replace(/I/g, '1')
+                  .replace(/Z/g, '2')
+                  .replace(/B/g, '8')
+                  .replace(/G/g, '6')
+                  .replace(/T/g, '7')
+                  .replace(/[^A-Z0-9-]/g, '');
+      };
+
+      const normalizedInput = normalizeText(rawInputText);
+
+      // Check master data pairs
+      for (const [id, item] of Object.entries(masterData)) {
+        const cleanProdNo = item.prodNo.toUpperCase();
+        const normProdNo = normalizeText(cleanProdNo);
+
+        // 1. Direct or substring match
+        if (rawInputText.includes(cleanProdNo) || normalizedInput.includes(normProdNo)) {
+          bestMatch = item;
+          break;
+        }
+
+        // 2. Suffix match (e.g. last 7 characters, e.g. "1021456-0" or "021456-0")
+        const prodSuffix = normProdNo.slice(-7);
+        if (prodSuffix.length >= 7 && normalizedInput.includes(prodSuffix)) {
+          bestMatch = item;
+          break;
+        }
+
+        // 3. Ambiguity handling for '5' vs 'S' (e.g. AS17-5021456-3 vs AS17-S021456-3)
+        // If we map 5 and S as the same fuzzy character, do they match?
+        const fuzzyInput = normalizedInput.replace(/S/g, '5');
+        const fuzzyProd = normProdNo.replace(/S/g, '5');
+        if (fuzzyInput.includes(fuzzyProd)) {
+          candidates.push(item);
+        }
+      }
+
+      // Update state and UI based on match quality
+      if (bestMatch) {
+        setMatchedItem(bestMatch);
+      } else if (candidates.length === 1) {
+        setMatchedItem(candidates[0]);
+      } else if (candidates.length > 1) {
+        // Multiple candidate matches (e.g. AS17-5021456-3 vs AS17-S021456-3 OCR ambiguity)
+        setAmbiguousItems(candidates);
+      } else {
+        setUnmatchedItem();
+      }
+    }
+
+    function setMatchedItem(item) {
+      appState.matchedMaster = item;
+      appState.ambiguousMasters = [];
+      
+      ocrBadgeEl.innerText = `照合: NO.${item.slipNo}`;
+      ocrBadgeEl.className = "ocr-status status-matched";
+
+      // Highlight matched master button
+      document.querySelectorAll('.quick-master-btn').forEach(btn => {
+        const slipId = btn.getAttribute('data-slip-no');
+        btn.className = 'quick-master-btn'; // reset
+        if (item.slipNo === slipId) {
+          btn.classList.add('matched');
+        }
+      });
+    }
+
+    function setAmbiguousItems(items) {
+      appState.matchedMaster = null;
+      appState.ambiguousMasters = items;
+
+      ocrBadgeEl.innerText = "候補複数あり";
+      ocrBadgeEl.className = "ocr-status status-ambiguous";
+
+      // Highlight all potential ambiguous matches
+      const slipIds = items.map(item => item.slipNo);
+      document.querySelectorAll('.quick-master-btn').forEach(btn => {
+        const slipId = btn.getAttribute('data-slip-no');
+        btn.className = 'quick-master-btn';
+        if (slipIds.includes(slipId)) {
+          btn.classList.add('candidate');
+        }
+      });
+    }
+
+    function setUnmatchedItem() {
+      appState.matchedMaster = null;
+      appState.ambiguousMasters = [];
+
+      ocrBadgeEl.innerText = "照合失敗 (未登録)";
+      ocrBadgeEl.className = "ocr-status status-unmatched";
+
+      document.querySelectorAll('.quick-master-btn').forEach(btn => {
+        btn.className = 'quick-master-btn';
+      });
+    }
+
+    // Render quick-fill master items
+    function renderQuickMasterList() {
+      quickMasterListEl.innerHTML = '';
+      for (const [id, item] of Object.entries(masterData)) {
+        const btn = document.createElement('button');
+        btn.className = 'quick-master-btn';
+        btn.setAttribute('data-slip-no', item.slipNo);
+        btn.innerHTML = `NO.${item.slipNo} (${item.prodNo})`;
+        btn.onclick = () => {
+          ocrInputEl.value = item.prodNo;
+          onOcrInputChanged();
+        };
+        quickMasterListEl.appendChild(btn);
+      }
+    }
+
+    // 9. CONFIRM & PERSIST ASSOCIATION
+    function confirmScan() {
+      if (!appState.activeBox) {
+        showToast("【エラー】箱が選択されていません");
+        return;
+      }
+
+      if (!appState.matchedMaster) {
+        if (appState.ambiguousMasters.length > 0) {
+          showToast("【エラー】候補が複数あります。正しい方をマスタ一覧から選択してください。");
+        } else {
+          showToast("【エラー】マスタと一致する製番が検出されていません");
+        }
+        return;
+      }
+
+      const slipNo = appState.matchedMaster.slipNo;
+      const prodNo = appState.matchedMaster.prodNo;
+      const box = appState.activeBox;
+
+      // Associate in memory
+      appState.associations[slipNo] = box;
+
+      // Store in History (latest first)
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      
+      const historyItem = {
+        time: timeStr,
+        box: box,
+        slipNo: slipNo,
+        prodNo: prodNo,
+        rawText: ocrInputEl.value
+      };
+
+      appState.history.unshift(historyItem);
+      
+      saveState();
+      renderHistoryList();
+      showToast(`箱${box} ⇄ NO.${slipNo} 登録完了`);
+    }
+
+    // Render History
+    function renderHistoryList() {
+      if (appState.history.length === 0) {
+        historyListEl.innerHTML = `<div style="color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px 0;">履歴はありません</div>`;
+        return;
+      }
+
+      historyListEl.innerHTML = '';
+      appState.history.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        div.innerHTML = `
+          <div class="hist-details">
+            <div>
+              <span class="hist-box">${item.box}</span>
+              <strong>NO.${item.slipNo}</strong> (${item.prodNo})
+            </div>
+            <span class="hist-meta">入力: "${item.rawText.length > 30 ? item.rawText.slice(0, 27) + '...' : item.rawText}"</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:10px; color:var(--text-muted);">${item.time}</span>
+            <button class="delete-hist-btn" onclick="deleteHistoryItem(${index})">削除</button>
+          </div>
+        `;
+        historyListEl.appendChild(div);
+      });
+    }
+
+    function deleteHistoryItem(index) {
+      appState.history.splice(index, 1);
+      
+      // Re-compile associations
+      appState.associations = {};
+      [...appState.history].reverse().forEach(item => {
+        appState.associations[item.slipNo] = item.box;
+      });
+
+      saveState();
+      renderHistoryList();
+      showToast("履歴を削除しました");
+    }
+
+    function clearAllHistory() {
+      if (confirm("全ての検収履歴と紐付けデータを削除しますか？")) {
+        appState.history = [];
+        appState.associations = {};
+        saveState();
+        renderHistoryList();
+        showToast("すべてのデータを初期化しました");
+      }
+    }
+
+    // 10. PASTING LOOKUP
+    function onPastingInputChanged() {
+      const value = pastingInputEl.value.trim();
+      
+      if (!value) {
+        giantLetterEl.innerText = "-";
+        statusCaptionEl.innerText = "納品書NOを入力してください";
+        statusCaptionEl.style.color = "var(--text-muted)";
+        matchingInfoEl.style.display = "none";
+        return;
+      }
+
+      const item = masterData[value];
+      if (!item) {
+        giantLetterEl.innerText = "?";
+        statusCaptionEl.innerText = "無効な納品書NO (1〜5)";
+        statusCaptionEl.style.color = "var(--accent-red)";
+        matchingInfoEl.style.display = "none";
+        return;
+      }
+
+      const associatedBox = appState.associations[value];
+      if (associatedBox) {
+        giantLetterEl.innerText = associatedBox;
+        giantLetterEl.style.color = "var(--accent-red)";
+        statusCaptionEl.innerText = `箱 ${associatedBox} に貼り付け`;
+        statusCaptionEl.style.color = "var(--accent-red)";
+        
+        matchingInfoEl.innerText = `製番: ${item.prodNo} (検収済)`;
+        matchingInfoEl.style.display = "block";
+        
+        // Retrigger pop animation
+        giantLetterEl.style.animation = 'none';
+        giantLetterEl.offsetHeight; // trigger reflow
+        giantLetterEl.style.animation = null;
+      } else {
+        giantLetterEl.innerText = "未";
+        giantLetterEl.style.color = "var(--text-muted)";
+        statusCaptionEl.innerText = `検収未登録の納品書です`;
+        statusCaptionEl.style.color = "var(--text-muted)";
+        
+        matchingInfoEl.innerText = `製番: ${item.prodNo}`;
+        matchingInfoEl.style.display = "block";
+      }
+    }
+
+    function keypadPress(key) {
+      if (key === 'C') {
+        pastingInputEl.value = '';
+      } else {
+        pastingInputEl.value = key;
+      }
+      onPastingInputChanged();
+    }
+
+    // 11. STATE SAVING
+    function saveState() {
+      localStorage.setItem('ocr_assistant_new_state', JSON.stringify({
+        associations: appState.associations,
+        history: appState.history,
+        masterData: masterData
+      }));
+    }
+
+    function loadSavedState() {
+      const saved = localStorage.getItem('ocr_assistant_new_state');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          appState.associations = parsed.associations || {};
+          appState.history = parsed.history || [];
+          if (parsed.masterData && Object.keys(parsed.masterData).length > 0) {
+            masterData = parsed.masterData;
+          } else {
+            // Default sample data
+            masterData = {
+              "1": { slipNo: "1", prodNo: "TS17-1021456-0" },
+              "2": { slipNo: "2", prodNo: "TS11-1021456-8" },
+              "3": { slipNo: "3", prodNo: "TS71-7021456-0" },
+              "4": { slipNo: "4", prodNo: "AS17-5021456-3" },
+              "5": { slipNo: "5", prodNo: "AS17-S021456-3" }
+            };
+          }
+        } catch (e) {
+          console.error("Error loading state:", e);
+        }
+      } else {
+        masterData = {
+          "1": { slipNo: "1", prodNo: "TS17-1021456-0" },
+          "2": { slipNo: "2", prodNo: "TS11-1021456-8" }
+        };
+      }
+      updateMasterCountDisplay();
+    }
+
+    // 11.5 DATA MANAGEMENT
+    function loadCsvData() {
+      const raw = document.getElementById('csv-input-area').value.trim();
+      if (!raw) {
+        showToast("データが入力されていません");
+        return;
+      }
+      
+      const lines = raw.split('\n');
+      let loadedCount = 0;
+      let newMasterData = {};
+      
+      lines.forEach(line => {
+        // Split by tab or comma
+        const parts = line.split(/[\t,]/).map(s => s.trim()).filter(s => s);
+        if (parts.length >= 2) {
+          const slipNo = parts[0];
+          const prodNo = parts[1];
+          newMasterData[slipNo] = { slipNo: slipNo, prodNo: prodNo };
+          loadedCount++;
+        }
+      });
+      
+      if (loadedCount > 0) {
+        masterData = newMasterData;
+        saveState();
+        renderQuickMasterList();
+        updateMasterCountDisplay();
+        document.getElementById('csv-input-area').value = '';
+        showToast(`${loadedCount}件のデータを登録しました`);
+      } else {
+        showToast("データを正しく読み込めませんでした");
+      }
+    }
+
+    function clearMasterData() {
+      if (confirm("登録されているマスタデータを全て削除しますか？")) {
+        masterData = {};
+        saveState();
+        renderQuickMasterList();
+        updateMasterCountDisplay();
+        showToast("マスタデータを削除しました");
+      }
+    }
+
+    function updateMasterCountDisplay() {
+      const countEl = document.getElementById('master-count-display');
+      if (countEl) {
+        countEl.innerText = Object.keys(masterData).length;
+      }
+    }
+
+    // 12. TOAST POPUPS
+    function showToast(message) {
+      toastEl.innerText = message;
+      toastEl.classList.add('show');
+      setTimeout(() => {
+        toastEl.classList.remove('show');
+      }, 2500);
+    }
+
+    // 13. SIMULATION FOR DESK TESTING
+    function simulateOcrScan(simulatedText) {
+      // Simulate drawing on preview canvas
+      const ctx = previewCanvasEl.getContext('2d');
+      previewCanvasEl.width = 300;
+      previewCanvasEl.height = 40;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, 300, 40);
+      ctx.fillStyle = '#10b981';
+      ctx.font = '16px monospace';
+      ctx.fillText(simulatedText, 10, 26);
+      cropPreviewContainer.style.display = 'block';
+
+      // Pass simulated text to the input field
+      ocrInputEl.value = simulatedText;
+      onOcrInputChanged();
+      showToast(`疑似クロップ読込: "${simulatedText}"`);
+    }
+  </script>
+</body>
+</html>
