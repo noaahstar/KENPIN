@@ -850,7 +850,7 @@
       <!-- Input Card -->
       <div class="card pasting-input-card">
         <div class="card-title">① 納品書NO入力</div>
-        <input type="number" id="pasting-slip-input" class="text-input" style="font-size: 24px; text-align: center; height: 56px;" placeholder="NO.を入力 (最大3桁)" oninput="onPastingInputChanged()">
+        <input type="text" inputmode="numeric" pattern="[0-9]*" id="pasting-slip-input" class="text-input" style="font-size: 24px; text-align: center; height: 56px;" placeholder="NO.を入力 (最大3桁)" oninput="onPastingInputChanged()">
         
         <!-- On-screen numeric keypad -->
         <div class="digital-keypad">
