@@ -1138,21 +1138,28 @@
         const displayWidth = videoRect.width;
         const displayHeight = videoRect.height;
 
-        // Coordinate scaling factors
-        const scaleX = srcWidth / displayWidth;
-        const scaleY = srcHeight / displayHeight;
-
-        // Compute crop bounds relative to the video display
-        const relLeft = targetRect.left - videoRect.left;
-        const relTop = targetRect.top - videoRect.top;
-        const relWidth = targetRect.width;
-        const relHeight = targetRect.height;
-
-        // Map relative crop bounds to source video resolution
-        const cropX = relLeft * scaleX;
-        const cropY = relTop * scaleY;
-        const cropWidth = relWidth * scaleX;
-        const cropHeight = relHeight * scaleY;
+        // Coordinate scaling factors for object-fit: cover
+        const scale = Math.max(displayWidth / srcWidth, displayHeight / srcHeight);
+        
+        // Actual rendered dimensions of the video (some parts may overflow visually)
+        const renderedWidth = srcWidth * scale;
+        const renderedHeight = srcHeight * scale;
+        
+        // Offsets due to centering (cover centers the video)
+        const offsetX = (renderedWidth - displayWidth) / 2;
+        const offsetY = (renderedHeight - displayHeight) / 2;
+        
+        // Compute crop bounds relative to the intrinsic video source
+        const targetRelLeft = targetRect.left - videoRect.left;
+        const targetRelTop = targetRect.top - videoRect.top;
+        
+        const targetInRenderedX = targetRelLeft + offsetX;
+        const targetInRenderedY = targetRelTop + offsetY;
+        
+        const cropX = targetInRenderedX / scale;
+        const cropY = targetInRenderedY / scale;
+        const cropWidth = targetRect.width / scale;
+        const cropHeight = targetRect.height / scale;
 
         // Resize offscreen canvas to exact cropped size
         // --- OCR ACCURACY IMPROVEMENT: Upscaling ---
@@ -1163,7 +1170,7 @@
         // Draw cropped segment and upscale
         offscreenCtx.drawImage(videoEl, cropX, cropY, cropWidth, cropHeight, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
-        // --- OCR ACCURACY IMPROVEMENT: Grayscale & Binarization ---
+        // --- OCR ACCURACY IMPROVEMENT: Extreme Contrast & Binarization for Vinyl Glare ---
         const imgData = offscreenCtx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height);
         const data = imgData.data;
         for (let i = 0; i < data.length; i += 4) {
@@ -1171,9 +1178,11 @@
           const g = data[i + 1];
           const b = data[i + 2];
           // Grayscale formula
-          const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-          // Threshold (adjust between 128-160 for optimal binarization)
-          const color = brightness > 140 ? 255 : 0;
+          let brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+          // Extreme contrast stretch to remove glare/shadows
+          brightness = brightness < 120 ? brightness * 0.7 : brightness * 1.5; 
+          // Threshold (binarize)
+          const color = brightness > 150 ? 255 : 0;
           
           data[i] = color;
           data[i+1] = color;
@@ -1240,30 +1249,71 @@
 
       const normalizedInput = normalizeText(rawInputText);
 
-      // Check master data pairs
+      // Levenshtein Distance function for fuzzy matching
+      const getLevenshtein = (a, b) => {
+        if(a.length === 0) return b.length; 
+        if(b.length === 0) return a.length; 
+        let matrix = [];
+        for(let i = 0; i <= b.length; i++){ matrix[i] = [i]; }
+        for(let j = 0; j <= a.length; j++){ matrix[0][j] = j; }
+        for(let i = 1; i <= b.length; i++){
+          for(let j = 1; j <= a.length; j++){
+            if(b.charAt(i-1) == a.charAt(j-1)){
+              matrix[i][j] = matrix[i-1][j-1];
+            } else {
+              matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, Math.min(matrix[i][j-1] + 1, matrix[i-1][j] + 1));
+            }
+          }
+        }
+        return matrix[b.length][a.length];
+      };
+
+      // Sliding window fuzzy search to find best substring match inside garbage text
+      const findBestFuzzySubstring = (haystack, needle) => {
+        if (needle.length > haystack.length) {
+          return getLevenshtein(haystack, needle);
+        }
+        let minDistance = Infinity;
+        for (let i = 0; i <= haystack.length - needle.length; i++) {
+          let substring = haystack.substring(i, i + needle.length);
+          let dist = getLevenshtein(substring, needle);
+          if (dist < minDistance) minDistance = dist;
+        }
+        return minDistance;
+      };
+
+      let bestScore = Infinity;
+
+      // Check master data pairs (prioritizing unread ones)
       for (const [id, item] of Object.entries(masterData)) {
+        // Optional: Skip already verified items to speed up and reduce false positives
+        if (appState.associations[item.slipNo]) continue;
+
         const cleanProdNo = item.prodNo.toUpperCase();
         const normProdNo = normalizeText(cleanProdNo);
-
-        // 1. Direct or substring match
-        if (rawInputText.includes(cleanProdNo) || normalizedInput.includes(normProdNo)) {
-          bestMatch = item;
-          break;
-        }
-
-        // 2. Suffix match (e.g. last 7 characters, e.g. "1021456-0" or "021456-0")
-        const prodSuffix = normProdNo.slice(-7);
-        if (prodSuffix.length >= 7 && normalizedInput.includes(prodSuffix)) {
-          bestMatch = item;
-          break;
-        }
-
-        // 3. Ambiguity handling for '5' vs 'S' (e.g. AS17-5021456-3 vs AS17-S021456-3)
-        // If we map 5 and S as the same fuzzy character, do they match?
         const fuzzyInput = normalizedInput.replace(/S/g, '5');
         const fuzzyProd = normProdNo.replace(/S/g, '5');
-        if (fuzzyInput.includes(fuzzyProd)) {
-          candidates.push(item);
+
+        // 1. Direct or substring exact match (Score 0)
+        if (rawInputText.includes(cleanProdNo) || normalizedInput.includes(normProdNo) || fuzzyInput.includes(fuzzyProd)) {
+          bestMatch = item;
+          candidates = [item];
+          bestScore = 0;
+          break; // Perfect match found
+        }
+
+        // 2. Fuzzy Sliding Window Match
+        const dist = findBestFuzzySubstring(fuzzyInput, fuzzyProd);
+        
+        // Accept up to 2 characters typo/misread (Score 1 or 2)
+        if (dist <= 2) {
+          if (dist < bestScore) {
+            bestScore = dist;
+            bestMatch = item;
+            candidates = [item];
+          } else if (dist === bestScore) {
+            candidates.push(item);
+          }
         }
       }
 
